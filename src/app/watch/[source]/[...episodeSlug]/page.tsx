@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 interface PageProps {
   params: Promise<{
     source: string;
-    episodeSlug: string;
+    episodeSlug: string | string[];
   }>;
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }
@@ -13,7 +13,14 @@ interface PageProps {
 export default async function WatchPage(props: PageProps) {
   const params = await props.params;
   const searchParams = await props.searchParams;
-  const { source, episodeSlug } = params;
+  let { source, episodeSlug } = params;
+  
+  // Handle catch-all segment
+  if (Array.isArray(episodeSlug)) {
+      episodeSlug = episodeSlug.map(s => decodeURIComponent(s)).join("/");
+  } else {
+      episodeSlug = decodeURIComponent(episodeSlug);
+  }
   const animeSlug = searchParams.anime as string | undefined;
 
   // Fetch Anime Details (Episode List) if anime slug is provided
