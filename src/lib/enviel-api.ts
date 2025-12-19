@@ -24,7 +24,7 @@ function normalizeSlug(slug: string): string {
     // Ensure "one-piece" is clean
     if (normalized === 'one-piece') return 'one-piece';
     
-    return slug; // If no override, return original (or normalized if you prefer)
+    return normalized; // If no override, return original (or normalized if you prefer)
 }
 
 export async function envielFetchOngoing(page: number = 1): Promise<EnvielAnimeListItem[]> {
