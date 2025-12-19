@@ -664,6 +664,20 @@ app.get("/anime/details/:slug", async (req, res) => {
         // B. If that fails, assume slug is general or from another source, and clean it.
 
         let searchTitle = primarySlug.replace(/-/g, ' ').replace(/episode \d+/i, '').trim();
+
+        // Manual Fix for common slug variances like "1piece"
+        const overrides = {
+            '1piece': 'one piece',
+            'one piece': 'one piece'
+        };
+        Object.keys(overrides).forEach(key => {
+            if (searchTitle.includes(key)) {
+                searchTitle = searchTitle.replace(key, overrides[key]);
+            }
+        });
+        
+        // Clean common suffixes
+        searchTitle = searchTitle.replace(/sub indo/gi, '').replace(/subtitle indonesia/gi, '').trim();
         let preFetchedDetail = null;
         const mainSourceKey = getSourceFromAlias('Stream1'); // otakudesu
 
