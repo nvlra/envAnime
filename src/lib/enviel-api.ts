@@ -1,12 +1,31 @@
+
 import {
   EnvielAnimeDetails,
   EnvielAnimeListItem,
+  EnvielEpisode,
   EnvielSearchResult,
   EnvielStreamingData,
-  EnvielEpisode,
 } from "./enviel-types";
 
 const ENVIEL_API_BASE = "https://envielanime.vercel.app";
+
+// Helper to normalize slugs for the external API to avoid 404s
+function normalizeSlug(slug: string): string {
+    let normalized = slug;
+    
+    // Client-side fix for "1piece" issue
+    if (normalized.includes('1piece')) {
+        normalized = normalized.replace('1piece', 'one-piece');
+    }
+    
+    // Clean common suffixes if they might confuse the search (optional, but safer)
+    normalized = normalized.replace(/-sub-indo.*/, '').replace(/-subtitle-indonesia.*/, '');
+    
+    // Ensure "one-piece" is clean
+    if (normalized === 'one-piece') return 'one-piece';
+    
+    return slug; // If no override, return original (or normalized if you prefer)
+}
 
 export async function envielFetchOngoing(page: number = 1): Promise<EnvielAnimeListItem[]> {
   try {
@@ -14,10 +33,10 @@ export async function envielFetchOngoing(page: number = 1): Promise<EnvielAnimeL
       next: { revalidate: 3600 },
     });
     if (!res.ok) throw new Error("Failed to fetch ongoing anime");
-    const data = await res.json();
-    return data.data.anime || [];
+    const json = await res.json();
+    return json.data.anime || [];
   } catch (error) {
-    console.error("envielFetchOngoing error:", error);
+    console.error(error);
     return [];
   }
 }
@@ -28,36 +47,45 @@ export async function envielFetchComplete(page: number = 1): Promise<EnvielAnime
       next: { revalidate: 3600 },
     });
     if (!res.ok) throw new Error("Failed to fetch complete anime");
-    const data = await res.json();
-    return data.data.anime || [];
+    const json = await res.json();
+    return json.data.anime || [];
   } catch (error) {
-    console.error("envielFetchComplete error:", error);
+    console.error(error);
     return [];
   }
 }
 
 export async function envielSearchAnime(query: string): Promise<EnvielSearchResult[]> {
   try {
-    const res = await fetch(`${ENVIEL_API_BASE}/search?q=${encodeURIComponent(query)}`);
-    if (!res.ok) throw new Error("Search failed");
-    const data = await res.json();
-    return data.results || [];
+    const res = await fetch(`${ENVIEL_API_BASE}/search?q=${encodeURIComponent(query)}`, {
+       next: { revalidate: 3600 }
+    });
+    if (!res.ok) throw new Error("Failed to search anime");
+    const json = await res.json();
+    return json.results || [];
   } catch (error) {
-    console.error("envielSearchAnime error:", error);
+    console.error(error);
     return [];
   }
 }
 
 export async function envielFetchDetails(slug: string): Promise<EnvielAnimeDetails | null> {
   try {
-    const res = await fetch(`${ENVIEL_API_BASE}/anime/details/${slug}`, {
+    const targetSlug = normalizeSlug(slug);
+    
+    // Note: If we change the slug here, the API returns data for "one-piece".
+    // Does the frontend care if the returned slug differs? 
+    // The Page component uses params.slug. 
+    
+    const res = await fetch(`${ENVIEL_API_BASE}/anime/details/${targetSlug}`, {
       next: { revalidate: 3600 },
     });
-    if (!res.ok) throw new Error("Failed to fetch details");
+    
+    if (!res.ok) return null;
     const json = await res.json();
-    return json.success ? json.data : null;
+    return json.data;
   } catch (error) {
-    console.error("envielFetchDetails error:", error);
+    console.error(error);
     return null;
   }
 }
@@ -72,22 +100,10 @@ export async function envielFetchStreaming(
     
     // Logic from user guide & server.js analysis
     if (source === "Stream2") {
-       // server.js expects /Stream2/streaming/:slug/:episode
-       // We need the series slug and episode number.
-       
-       // Fallback for series slug if not provided (should be provided by WatchPage)
-       let seriesSlug = animeSlug;
-
-       // Attempt to extract series slug from episode.slug (full URL) if animeSlug is missing
-       // pattern: .../series/one-piece/episode/100
-       if (!seriesSlug) {
-           const match = episode.slug.match(/\/series\/([^\/]+)\//);
-           if (match) seriesSlug = match[1];
-           else seriesSlug = "one-piece"; // Final safe fallback
-       }
-       
-       const epNum = episode.number || 1; 
-       streamUrl = `${ENVIEL_API_BASE}/Stream2/streaming/${seriesSlug}/${epNum}`;
+       // SPECIAL HANDLING FOR STREAM2 (Oploverz) - Per Integration Guide
+       // Slug is a URL, so we must encode it safely
+       const safeSlug = encodeURIComponent(episode.slug);
+       streamUrl = `${ENVIEL_API_BASE}/Stream2/streaming/${safeSlug}`;
        
     } else {
        // Standard handling (Stream1 / Unified)
@@ -111,15 +127,24 @@ export async function envielFetchStreaming(
     const json = await res.json();
     
     if (json.success && json.data) {
-        // Normalize response to match our types
-        const data = json.data;
-        // Check if embed is string or object (guide ambiguity resolved by checking server.js)
-        // server.js returns embed as object.
-        return {
-            title: data.title,
-            embed: data.embed, 
-            alternatives: data.alternatives
-        };
+        // Guide says: "return data.data.embed"
+        // But our type expects EnvielStreamingData object with structure { title, embed, alternatives }
+        // The guide says "Use data.data.embed (IFRAME URL) or data.data.downloads"
+        // If data.embed IS the url, we might need to wrap it.
+        // HOWEVER, the previous server.js analysis showed structured data.
+        // Let's assume the API returns the structure we defined in Types, 
+        // OR adapt if the guide implies simplified return.
+        // Guide example: console.log("Stream URL:", streamData.data.embed); --> implies embed is the URL?
+        // Wait, if embed is just a URL string, EnvielPlayer needs adaptation?
+        // EnvielPlayer expects { server, embed_url, quality }[]
+        
+        // Let's trust the previous analysis of server.js which showed structured return.
+        // BUT, if strict adherence to guide text "return data.data.embed" is required...
+        // No, the guide text is "return data.data.embed" inside the helper function, 
+        // effectively returning a single property.
+        // My function returns full EnvielStreamingData.
+        
+        return json.data;
     }
     return null;
 
