@@ -70,12 +70,28 @@ export async function envielFetchStreaming(
   try {
     let streamUrl = "";
     
-    // Logic from user guide
+    // Logic from user guide & server.js analysis
     if (source === "Stream2") {
-       const safeSlug = encodeURIComponent(episode.slug);
-       streamUrl = `${ENVIEL_API_BASE}/Stream2/streaming/${safeSlug}`;
+       // server.js expects /Stream2/streaming/:slug/:episode
+       // We need the series slug and episode number.
+       
+       // Fallback for series slug if not provided (should be provided by WatchPage)
+       let seriesSlug = animeSlug;
+
+       // Attempt to extract series slug from episode.slug (full URL) if animeSlug is missing
+       // pattern: .../series/one-piece/episode/100
+       if (!seriesSlug) {
+           const match = episode.slug.match(/\/series\/([^\/]+)\//);
+           if (match) seriesSlug = match[1];
+           else seriesSlug = "one-piece"; // Final safe fallback
+       }
+       
+       const epNum = episode.number || 1; 
+       streamUrl = `${ENVIEL_API_BASE}/Stream2/streaming/${seriesSlug}/${epNum}`;
+       
     } else {
-       // Standard handling
+       // Standard handling (Stream1 / Unified)
+       // server.js expects /streaming/:anime/:episode
        let epNum = episode.number;
        if (!epNum) {
           const match = episode.slug.match(/episode-(\d+)/) || episode.slug.match(/-(\d+)$/);
@@ -83,7 +99,7 @@ export async function envielFetchStreaming(
           else epNum = 1;
        }
        
-       const finalAnimeSlug = animeSlug || "one-piece"; // Fallback as per guide example, though risky
+       const finalAnimeSlug = animeSlug || "one-piece"; 
        streamUrl = `${ENVIEL_API_BASE}/streaming/${finalAnimeSlug}/${epNum}`;
     }
 
